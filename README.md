@@ -13,11 +13,11 @@ preserve them.
 
 The program checks if the user has OneDrive configured, and if so it will copy the files to:
 
-    \<*OneDriveFolder*\>\\SpotlightImages
+    <OneDriveFolder>\SpotlightImages
 
 Otherwise it will copy the files to:
 
-    \<*Pictures*\>\\SpotlightImages
+    <Pictures>\SpotlightImages
 
 As files are copied to the target folder the names of the files are recorded in a text file
 named index.txt. As files are copied the program first checks index.txt to make sure the file
