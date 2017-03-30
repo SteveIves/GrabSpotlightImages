@@ -1,0 +1,85 @@
+
+import System
+import System.IO
+import System.Linq
+import System.Windows.Media.Imaging
+import Microsoft.Win32
+
+namespace GrabSpotlightImages
+
+	main
+	proc
+		;;Define where to look for spotlight images
+		data sourcePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Packages\Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy\LocalState\Assets")
+
+		;;Figure out where to store the images
+		data targetPath = (String)Registry.GetValue("HKEY_CURRENT_USER\Software\Microsoft\OneDrive","UserFolder", ^null)
+		if (targetPath != ^null) then
+			targetPath = Path.Combine(targetPath, "SpotlightImages")
+		else
+			targetPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "SpotlightImages")
+
+		;;Define the file spec of the index file			
+		data indexFile = Path.Combine(targetPath, "index.txt")
+		data indexFileText = ""
+
+		;; Make sure the target folder exists
+		if (!Directory.Exists(targetPath))
+			Directory.CreateDirectory(targetPath)
+
+		;; Make sure the index.txt file exists
+		if (File.Exists(indexFile)) then
+		begin
+			indexFileText = File.ReadAllText(indexFile)
+		end
+		else
+		begin
+			disposable data sw, @StreamWriter, File.CreateText(indexFile)
+			sw.WriteLine("Files listed here will not be re-copied into this folder.")
+			sw.Close()
+		end
+
+		data sourceFile, String
+		foreach sourceFile in Directory.GetFiles(sourcePath)
+		begin
+			;; Look for keepers
+			begin
+				disposable data fs, @FileStream, new FileStream(sourceFile, FileMode.Open, FileAccess.Read, FileShare.Read)
+				try
+				begin
+					data img, @BitmapSource, BitmapFrame.Create(fs)
+					;; Skip portrait and small images
+					if ((img.PixelWidth < img.PixelHeight) || (img.PixelWidth < 600))
+						nextloop
+				end
+				catch (syn_exception, @Exception)
+				begin
+					;; Not a bitmap image, skip it
+					nextloop
+				end
+				endtry
+			end
+
+			;; Figure out the name of the target file
+			data targetFileName = Path.GetFileName(sourceFile) + ".jpg"
+			data targetFileSpec = Path.Combine(targetPath, targetFileName)
+
+			;; Is it already there?
+			if (File.Exists(targetFileSpec))
+				nextloop
+
+			;; Has it been previously copied and deleted?
+			if (indexFileText.Contains(targetFileName))
+				nextloop
+
+			;; We got a keeper - copy it
+			File.Copy(sourceFile, targetFileSpec)
+
+			;; And record it
+			File.AppendAllText(indexFile, targetFileName + Environment.NewLine)
+		end
+
+	endmain
+
+endnamespace
+
