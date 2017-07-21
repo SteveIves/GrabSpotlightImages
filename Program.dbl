@@ -79,6 +79,36 @@ namespace GrabSpotlightImages
 			File.AppendAllText(indexFile, targetFileName + Environment.NewLine)
 		end
 
+		;----------------------------------------------------------
+		;Delete identical files that have different names
+
+		data fileBeingConsidered, String
+		data fileBeingCompared, string
+
+		foreach fileBeingConsidered in Directory.GetFiles(targetPath,"*.jpg")
+		begin
+			if (File.Exists(fileBeingConsidered))
+			begin
+				foreach fileBeingCompared in Directory.GetFiles(targetPath,"*.jpg")
+				begin
+					if (!File.Exists(fileBeingCompared) || fileBeingCompared.Equals(fileBeingConsidered))
+						nextloop
+					if (FileTools.FileEquals(fileBeingConsidered,fileBeingCompared))
+					begin
+						try
+						begin
+							File.Delete(fileBeingCompared)
+						end
+						catch (e, @Exception)
+						begin
+							nop
+						end
+						endtry
+					end
+				end
+			end
+		end
+
 	endmain
 
 endnamespace

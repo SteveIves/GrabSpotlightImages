@@ -1,0 +1,45 @@
+
+import System.IO
+import System.Linq
+
+namespace GrabSpotlightImages
+
+	public static class FileTools
+
+		public static method FileEquals, boolean
+			fileName1, string 
+			fileName2, string 
+		proc
+			;;  Check the file size and CRC equality here.. if they are equal...    
+			disposable data file1 = new FileStream(fileName1, FileMode.Open)
+			disposable data file2 = new FileStream(fileName2, FileMode.Open)
+			mreturn FileStreamEquals(file1, file2)
+		endmethod
+
+		public static method FileStreamEquals, boolean
+			stream1, @Stream 
+			stream2, @Stream 
+	proc
+			data bufferSize, int, 2048
+			data buffer1, [#]byte, new byte[bufferSize] 
+			data buffer2, [#]byte, new byte[bufferSize] 
+
+			repeat
+			begin
+				data count1, int, stream1.Read(buffer1, 0, bufferSize)
+				data count2, int, stream2.Read(buffer2, 0, bufferSize)
+
+				if (count1 != count2)
+					mreturn false
+
+				if (count1 == 0)
+					mreturn true
+
+				if (!buffer1.Take(count1).SequenceEqual(buffer2.Take(count2)))
+					mreturn false
+			end
+		endmethod
+
+	endclass
+
+endnamespace

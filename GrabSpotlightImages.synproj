@@ -47,6 +47,7 @@
     <Reference Include="WindowsBase" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="FileTools.dbl" />
     <Compile Include="Properties\AssemblyInfo.dbl" />
     <Compile Include="Program.dbl" />
   </ItemGroup>
