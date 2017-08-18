@@ -4,28 +4,66 @@ import System.IO
 import System.Linq
 import System.Windows.Media.Imaging
 import Microsoft.Win32
+import System.Collections.Generic
 
 namespace GrabSpotlightImages
 
 	main
 	proc
-		;;Define where to look for spotlight images
+		;;Determine where to look for spotlight images
 		data sourcePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Packages\Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy\LocalState\Assets")
 
-		;;Figure out where to store the images
+		;;Make sure the source folder exists
+		if (!Directory.Exists(sourcePath))
+		begin
+			Console.WriteLine("ERROR: Source folder not found: {0}",sourcePath)
+			stop
+		end
+
+		;;Make sure the source folder contains images
+		data candidateFiles = Directory.GetFiles(sourcePath)
+		if (candidateFiles.Length == 0)
+		begin
+			Console.WriteLine("ERROR: No files found in source folder: {0}",sourcePath)
+			stop
+		end
+
+		Console.WriteLine("Processing {0} candidate files",candidateFiles.Length)
+
+		;Figure out where to store the images
 		data targetPath = (String)Registry.GetValue("HKEY_CURRENT_USER\Software\Microsoft\OneDrive","UserFolder", ^null)
 		if (targetPath != ^null) then
 			targetPath = Path.Combine(targetPath, "SpotlightImages")
 		else
 			targetPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "SpotlightImages")
 
+		;; Make sure the target folder exists
+		if (!Directory.Exists(targetPath))
+			Directory.CreateDirectory(targetPath)
+
+		;----------------------------------------------------------------------------------
+		;TODO: Make a Dictionary<string,string> where the key is the hex value of the
+		;hash of each file in the target folder, and the value is the name of the file.
+		;We will use this later to detect duplicate images with different names.
+
+		data existingFileHashes = new Dictionary<string,string>()
+		data tmpFile, string
+
+		foreach tmpFile in Directory.GetFiles(targetPath,"*.jpg")
+		begin
+			existingFileHashes.Add(FileTools.GetFileHash(tmpFile),tmpFile)
+		end
+
+		;----------------------------------------------------------------------------------
+
 		;;Define the file spec of the index file			
 		data indexFile = Path.Combine(targetPath, "index.txt")
 		data indexFileText = ""
 
-		;; Make sure the target folder exists
-		if (!Directory.Exists(targetPath))
-			Directory.CreateDirectory(targetPath)
+;TODO: Index file processing is intended to ensure that files that have been copied but then
+;deleted are not re-copied at a later date. Currently this mechanism is based on the name of
+;the file, but it turns out that Windows uses different names (GUIDs) for the same image file.
+;Need to re-work this mechanism based on hashes of the file content.
 
 		;; Make sure the index.txt file exists
 		if (File.Exists(indexFile)) then
@@ -39,75 +77,97 @@ namespace GrabSpotlightImages
 			sw.Close()
 		end
 
-		data sourceFile, String
-		foreach sourceFile in Directory.GetFiles(sourcePath)
+		data filesCopied = 0
+
+		data candidateFile, String
+		foreach candidateFile in candidateFiles
 		begin
-			;; Look for keepers
+;TODO: For now don't remove the additional BEGIN/END here.
+;There appears to be a compiler bug in here somewhere, and without this
+;we see an ILASM error!
 			begin
-				disposable data fs, @FileStream, new FileStream(sourceFile, FileMode.Open, FileAccess.Read, FileShare.Read)
+				;; Look for keepers
+				disposable data fs = new FileStream(candidateFile, FileMode.Open, FileAccess.Read, FileShare.Read)
 				try
 				begin
 					data img, @BitmapSource, BitmapFrame.Create(fs)
-					;; Skip portrait and small images
-					if ((img.PixelWidth < img.PixelHeight) || (img.PixelWidth < 600))
+					;; Skip small images and portrait imahes
+					if ((img.PixelWidth < 600) || (img.PixelWidth < img.PixelHeight))
 						nextloop
 				end
-				catch (syn_exception, @Exception)
+				catch (ex)
 				begin
 					;; Not a bitmap image, skip it
 					nextloop
 				end
 				endtry
-			end
 
-			;; Figure out the name of the target file
-			data targetFileName = Path.GetFileName(sourceFile) + ".jpg"
-			data targetFileSpec = Path.Combine(targetPath, targetFileName)
+				;; Figure out the name of the target file
+				data targetFileName = Path.GetFileName(candidateFile) + ".jpg"
+				data targetFileSpec = Path.Combine(targetPath, targetFileName)
 
-			;; Is it already there?
-			if (File.Exists(targetFileSpec))
-				nextloop
+				;; Is it already there?
+				if (File.Exists(targetFileSpec))
+					nextloop
 
-			;; Has it been previously copied and deleted?
-			if (indexFileText.Contains(targetFileName))
-				nextloop
+				;; Has it been previously copied and deleted?
+				if (indexFileText.Contains(targetFileName))
+					nextloop
 
-			;; We got a keeper - copy it
-			File.Copy(sourceFile, targetFileSpec)
+				;; Do we already have an existing file with the same hash value?
+				data candidateFileHash = FileTools.GetFileHash(candidateFile)
+				if (existingFileHashes.ContainsKey(candidateFileHash))
+					nextloop
 
-			;; And record it
-			File.AppendAllText(indexFile, targetFileName + Environment.NewLine)
-		end
+				;; We got a keeper - copy it
+				File.Copy(candidateFile, targetFileSpec)
+				existingFileHashes.Add(candidateFileHash,targetFileSpec)
+				filesCopied += 1
 
-		;----------------------------------------------------------
-		;Delete identical files that have different names
-
-		data fileBeingConsidered, String
-		data fileBeingCompared, string
-
-		foreach fileBeingConsidered in Directory.GetFiles(targetPath,"*.jpg")
-		begin
-			if (File.Exists(fileBeingConsidered))
-			begin
-				foreach fileBeingCompared in Directory.GetFiles(targetPath,"*.jpg")
-				begin
-					if (!File.Exists(fileBeingCompared) || fileBeingCompared.Equals(fileBeingConsidered))
-						nextloop
-					if (FileTools.FileEquals(fileBeingConsidered,fileBeingCompared))
-					begin
-						try
-						begin
-							File.Delete(fileBeingCompared)
-						end
-						catch (e, @Exception)
-						begin
-							nop
-						end
-						endtry
-					end
-				end
+				;; And record it in the index file
+				File.AppendAllText(indexFile, targetFileName + Environment.NewLine)
 			end
 		end
+
+		Console.WriteLine("Copied {0} files to target folder",filesCopied)
+
+		;Shouldn't need to do this any more because of the HASH mechanism
+
+;		;----------------------------------------------------------
+;		;Delete identical files that have different names
+;
+;		Console.WriteLine("Searching for duplicate images")
+;
+;		data fileBeingConsidered, string
+;		data duplicatesDeleted = 0
+;
+;		foreach fileBeingConsidered in Directory.GetFiles(targetPath,"*.jpg")
+;		begin
+;			data fileBeingCompared, string
+;			foreach fileBeingCompared in Directory.GetFiles(targetPath,"*.jpg")
+;			begin
+;				if (fileBeingCompared.Equals(fileBeingConsidered))
+;					nextloop
+;				if (FileTools.FileEquals(fileBeingConsidered,fileBeingCompared))
+;				begin
+;					try
+;					begin
+;						File.Delete(fileBeingCompared)
+;						duplicatesDeleted += 1
+;					end
+;					catch (e, @Exception)
+;					begin
+;						nop
+;					end
+;					endtry
+;				end
+;			end
+;		end
+;
+;		if (duplicatesDeleted > 0) then
+;			Console.WriteLine("Deleted {0} duplicate images",duplicatesDeleted)
+;		else
+;			Console.WriteLine("No duplicates imaged found",duplicatesDeleted)
 
 	endmain
 

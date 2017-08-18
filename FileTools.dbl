@@ -1,28 +1,32 @@
 
 import System.IO
 import System.Linq
+import System.Security.Cryptography
+import System.Text
+
+.array 0
 
 namespace GrabSpotlightImages
 
 	public static class FileTools
 
 		public static method FileEquals, boolean
-			fileName1, string 
-			fileName2, string 
+			fileName1, string
+			fileName2, string
 		proc
-			;;  Check the file size and CRC equality here.. if they are equal...    
+			;;  Check the file size and CRC equality here.. if they are equal...
 			disposable data file1 = new FileStream(fileName1, FileMode.Open)
 			disposable data file2 = new FileStream(fileName2, FileMode.Open)
 			mreturn FileStreamEquals(file1, file2)
 		endmethod
 
 		public static method FileStreamEquals, boolean
-			stream1, @Stream 
-			stream2, @Stream 
-	proc
+			stream1, @Stream
+			stream2, @Stream
+		proc
 			data bufferSize, int, 2048
-			data buffer1, [#]byte, new byte[bufferSize] 
-			data buffer2, [#]byte, new byte[bufferSize] 
+			data buffer1, [#]byte, new byte[bufferSize]
+			data buffer2, [#]byte, new byte[bufferSize]
 
 			repeat
 			begin
@@ -38,6 +42,23 @@ namespace GrabSpotlightImages
 				if (!buffer1.Take(count1).SequenceEqual(buffer2.Take(count2)))
 					mreturn false
 			end
+		endmethod
+
+		public static method GetFileHash, string
+			required in fileSpec, string
+			endparams
+		proc
+			disposable data crypto = MD5.Create()
+			disposable data stm = File.OpenRead(fileSpec)
+			data hash = crypto.ComputeHash(stm)
+			data sb = new StringBuilder()
+			data ix, int
+
+			for ix from 0 thru hash.GetUpperBound(0)
+				sb.Append(hash[ix].ToString("x2"))
+
+			mreturn sb.ToString()
+
 		endmethod
 
 	endclass
